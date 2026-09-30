@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import ImageGrab
 from pathlib import Path
-from datetime import datetime
 import json
 import ctypes
 
@@ -30,10 +29,17 @@ class ScreenshotTool:
         self.format_var = tk.StringVar(value="PNG")
         self.filename_var = tk.StringVar(value="Screenshot")
 
+        # Global hotkey state
+        self.hotkey_was_down = False
+        self.hotkey_check_id = None
+
         self.load_config()
         self.create_ui()
 
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+
+        # Start global hotkey monitor
+        self.check_global_hotkey()
 
     # =========================================================
     # CONFIG
@@ -235,8 +241,8 @@ class ScreenshotTool:
             side="left",
             padx=(5, 0)
         )
-        
-        # ----------------------------------------------------
+
+        # -----------------------------------------------------
         # FILENAME
         # -----------------------------------------------------
 
@@ -310,17 +316,12 @@ class ScreenshotTool:
 
         ttk.Label(
             main,
-            text="Hotkey: Ctrl + Shift + S"
+            text="Global Hotkey: Ctrl + Shift + S"
         ).grid(
             row=8,
             column=0,
             columnspan=4,
             pady=(5, 0)
-        )
-
-        self.root.bind(
-            "<Control-Shift-s>",
-            self.hotkey_capture
         )
 
     # =========================================================
@@ -466,10 +467,51 @@ class ScreenshotTool:
             )
 
     # =========================================================
-    # HOTKEY
+    # GLOBAL HOTKEY
     # =========================================================
 
-    def hotkey_capture(self, event=None):
+    def check_global_hotkey(self):
+
+        try:
+            VK_CONTROL = 0x11
+            VK_SHIFT = 0x10
+            VK_S = 0x53
+
+            ctrl_down = ctypes.windll.user32.GetAsyncKeyState(
+                VK_CONTROL
+            ) & 0x8000
+
+            shift_down = ctypes.windll.user32.GetAsyncKeyState(
+                VK_SHIFT
+            ) & 0x8000
+
+            s_down = ctypes.windll.user32.GetAsyncKeyState(
+                VK_S
+            ) & 0x8000
+
+            hotkey_down = (
+                ctrl_down
+                and shift_down
+                and s_down
+            )
+
+            # Trigger only when the key combination is first pressed.
+            # This prevents multiple screenshots while the keys
+            # are being held down.
+            if hotkey_down and not self.hotkey_was_down:
+                self.hotkey_capture()
+
+            self.hotkey_was_down = hotkey_down
+
+        except Exception:
+            pass
+
+        self.hotkey_check_id = self.root.after(
+            50,
+            self.check_global_hotkey
+        )
+
+    def hotkey_capture(self):
         self.capture()
 
     # =========================================================
@@ -690,6 +732,14 @@ class ScreenshotTool:
     # =========================================================
 
     def close(self):
+
+        if self.hotkey_check_id is not None:
+            try:
+                self.root.after_cancel(
+                    self.hotkey_check_id
+                )
+            except Exception:
+                pass
 
         self.save_config()
 
